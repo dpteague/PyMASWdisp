@@ -47,9 +47,9 @@ import shotgathers
 
 
 # Width and height (in) of plots
-mwdth = 6.45
-mhght = 4
-fsize = 10
+mwdth = 10
+mhght = 6
+fsize = 11
 
 
 # Function to bin dispersion data from one or more arrays or offsets and compute
@@ -203,7 +203,6 @@ def plotDCforRmv( rawDC, meanDisp, setLeg, markType=[], colorSpec=[], xScaleType
     axf.errorbar( meanDisp[:,0], meanDisp[:,1], meanDisp[:,2], marker="o", markersize=5, color="k", linestyle="none" )
     # kmin and kmax lines
     if not np.isnan(kmin):
-        print vel_klimF[:,0]
         axf.plot( freq_klim, vel_klimF[:,0], linestyle=":" )
         axf.plot( freq_klim, vel_klimF[:,1], linestyle="-" )
         axf.plot( freq_klim, vel_klimF[:,2], linestyle="--" )
