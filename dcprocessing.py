@@ -41,6 +41,10 @@
 	Sacchi M.D. and Ulrych T.J. (1995). "High Resolution velocity gathers
             and offset space reconstruction", Geophysics, Vol. 60, pp. 1169-
             1177.
+        Zywicki, D.J. and Rix, G.J. (2005). Mitigation of Near-Field Effects
+            for Seismic Surface Wave Velocity Estimation with Cylindrical
+            Beamformers. Journal of Geotechnical and Geoenvironmental
+            Engineering, 131(8), pp. 970-977.
         Zywicki, D.J. (1999). Advanced signal processing methods applied to 
             engineering analysis of seismic surface waves. Ph.D. 
             Dissertation, School of Civil and Environmental Engineering, 
@@ -68,6 +72,7 @@
 # Import modues
 import numpy as np
 from scipy import signal
+from scipy import special
 import dctypes
 
   
@@ -83,13 +88,10 @@ def fk( shotGather, numk=2048, min_frequency=5, max_frequency=100 ):
 
     # Sampling parameters.......................................................
     # Time
-    fnyq = 1/(2*shotGather.dt)
-    df = 1/(shotGather.n_samples*shotGather.dt)
-    freq = np.arange( 0, fnyq+df, df )
+    freq = np.arange( 0, shotGather.fnyq+shotGather.df, shotGather.df )
     # Space
-    kres = 2*np.pi / spacing
     dk = 2*np.pi / (numk*spacing)
-    k_vals = np.arange( dk, kres, dk )
+    k_vals = np.arange( dk, shotGather.kres, dk )
 
     # Perform two-dimensional FFT...............................................
     fk = np.fft.fft2( shotGather.timeHistories, s=(shotGather.n_samples, numk) )
@@ -116,25 +118,18 @@ def fk( shotGather, numk=2048, min_frequency=5, max_frequency=100 ):
         k_peak[k] = k_vals[pk_id]
 
     # Create instance of DispersionPower class..................................
-    dispersionPower = dctypes.DispersionPower( freq, k_peak, k_vals, 'wavenumber', kres, np.transpose(pnorm) )
+    dispersionPower = dctypes.DispersionPower( freq, k_peak, k_vals, 'wavenumber', shotGather.kres, np.transpose(pnorm) )
     return dispersionPower 
     
 
 
 #*******************************************************************************      
 # Frequency Domain Beamformer             
-def fdbf( shotGather, weightType='none', numv=2048, min_vel=1, max_vel=1000, min_frequency=5, max_frequency=100 ):
+def fdbf( shotGather, weightType='none', steeringVector='plane', numv=2048, min_vel=1, max_vel=1000, min_frequency=5, max_frequency=100 ):
 
     # Ensure that min_velocity is greater than zero for numerical stability
     if min_vel<1:
         min_vel = 1
-    
-    # Sampling parameters.......................................................
-    fnyq = 1/(2*shotGather.dt)
-    df = 1/(shotGather.n_samples*shotGather.dt)
-    # Maximum wavenumber that may be used while still avoiding spatial aliasing
-    # (refer to Foti et al. 2014)
-    kres = 2*np.pi / min(np.diff(shotGather.position))
 
     # Spatiospectral correlation matrix.........................................
     R = np.zeros(( (shotGather.n_samples/2+1), shotGather.n_channels, shotGather.n_channels), complex)
@@ -157,7 +152,7 @@ def fdbf( shotGather, weightType='none', numv=2048, min_vel=1, max_vel=1000, min
         W[:,:,:] = np.diag( np.sqrt(abs(shotGather.offset) + shotGather.position) )
     # 1/|A(f,x)|, where A is Fourier Transform of a(t,x)
     elif str.lower(weightType) == 'invamp':
-        freqFFT = np.concatenate([np.arange(0, fnyq+df, df), np.arange(-(fnyq-df), 0, df) ])
+        freqFFT = np.concatenate([np.arange(0, shotGather.fnyq+shotGather.df, shotGather.df), np.arange(-(shotGather.fnyq-shotGather.df), 0, shotGather.df) ])
         Af = np.fft.fft(shotGather.timeHistories, axis=0)
         for bb in range(len(freq)):
             freq_id = np.argmin( np.absolute(freqFFT-freq[bb]) )
@@ -177,12 +172,20 @@ def fdbf( shotGather, weightType='none', numv=2048, min_vel=1, max_vel=1000, min
     for m in range( len(freq) ):
         # Convert trial velocities to wavenumbers (set equal to 0 for k > kres)
         k_vals = 2*np.pi*freq[m] / v_vals
-        alias_id = np.where( k_vals > kres )[0]
+        alias_id = np.where( k_vals > shotGather.kres )[0]
         # Weighting matrix for current frequency
         Wf = W[m,:,:]
         for k in range( numv ):
             # Steering vector
-            expterm = np.exp( 1j * k_vals[k] * shotGather.position )
+            if str.lower(steeringVector) == 'cylindrical': 
+                pos = shotGather.position
+                # If x[0]=0, set equal to arbitrarilly small number for stability                
+                if pos[0]==0:
+                    pos[0] = 1e-16
+                H0 = special.j0( k_vals[k] * pos ) + 1j*special.y0( k_vals[k] * pos )
+                expterm = np.exp( 1j * np.angle(H0) )
+            else:
+                expterm = np.exp( 1j * k_vals[k] * shotGather.position )
             # power[k,m] = expterm' * Wf * R[m,:,:] * Wf' * expterm
             power[k,m] = np.dot( np.dot( np.dot( np.dot( np.conj(expterm).transpose(),Wf ),R[m,:,:] ),Wf.transpose()),expterm)
             power[alias_id,m] = 0
@@ -195,7 +198,7 @@ def fdbf( shotGather, weightType='none', numv=2048, min_vel=1, max_vel=1000, min
         v_peak[m] = v_vals[max_id]
 
     # Create instance of DispersionPower class
-    dispersionPower = dctypes.DispersionPower( freq, v_peak, v_vals, 'velocity', kres, pnorm )
+    dispersionPower = dctypes.DispersionPower( freq, v_peak, v_vals, 'velocity', shotGather.kres, pnorm )
     return dispersionPower    
 
 
@@ -208,13 +211,8 @@ def phase_shift( shotGather, num_vel=2048, min_frequency=5, max_frequency=100, m
     if min_velocity < 1:
         min_velocity = 1
     
-    # Sampling parameters.......................................................
-    # Time
-    fnyq = 1/(2*shotGather.dt)
-    df = 1/(shotGather.n_samples*shotGather.dt)
-    freq = np.arange(0, fnyq, df)
-    # Space
-    kres = 2*np.pi / min(np.diff(shotGather.position))
+    # Frequency vector
+    freq = np.arange(0, shotGather.fnyq, shotGather.df)
 
     # FFT of timeHistories (Equation 1 of Park et al. 1998).....................
     U = np.fft.fft(shotGather.timeHistories, axis=0)
@@ -240,7 +238,7 @@ def phase_shift( shotGather, num_vel=2048, min_frequency=5, max_frequency=100, m
         # Loop through trial velocities at each frequency
         for r in range( np.shape(v_vals)[0] ):
             # Set power equal to NaN at wavenumbers > kres
-            if v_vals[r] < (2*np.pi*freq[c]/kres):
+            if v_vals[r] < (2*np.pi*freq[c]/shotGather.kres):
                 V[r,c] = float( 'nan' )
             # (Equation 4 in Park et al. 1998)
             else:
@@ -252,7 +250,7 @@ def phase_shift( shotGather, num_vel=2048, min_frequency=5, max_frequency=100, m
         v_peak[c] = v_vals[max_id]
 
     # Create instance of DispersionPower class..................................
-    dispersionPower = dctypes.DispersionPower( freq, v_peak, v_vals, 'velocity', kres, pnorm )
+    dispersionPower = dctypes.DispersionPower( freq, v_peak, v_vals, 'velocity', shotGather.kres, pnorm )
     return dispersionPower 
                 
     
@@ -267,14 +265,9 @@ def tau_p( shotGather, num_vel=2048, min_frequency=5, max_frequency=100, min_vel
         if min_velocity<1:
             min_velocity = 1
     
-    # Sampling parameters.......................................................
-    # Time
-    fnyq = 1/(2*shotGather.dt)
-    df = 1/(shotGather.n_samples*shotGather.dt)
-    freq = np.arange(0, fnyq+df, df)
-    # Space
+    # Processing parameters.......................................................
+    freq = np.arange(0, shotGather.fnyq+shotGather.df, shotGather.df)
     h = shotGather.position
-    kres = 2*np.pi / min(np.diff(shotGather.position))    
 
     # Processing parameters.....................................................
     p_max = 1.0 / min_velocity
@@ -342,7 +335,7 @@ def tau_p( shotGather, num_vel=2048, min_frequency=5, max_frequency=100, min_vel
     # Compute peaks in power spectrum (avoid aliased velocites)
     for n in range( len(freq) ):
         # Aliasing criteria
-        v_alias[n] = freq[n]*2*np.pi / kres
+        v_alias[n] = freq[n]*2*np.pi / shotGather.kres
         p_alias[n] = 1.0 / v_alias[n]
         # Set power associated with all aliased wavenumbers equal to NaN
         aliased_id = np.where( q > p_alias[n] )[0]
@@ -350,18 +343,19 @@ def tau_p( shotGather, num_vel=2048, min_frequency=5, max_frequency=100, min_vel
         # Find maximum power
         max_id = np.nanargmax( pnorm[n,:] )
         max_power[n] = pnorm[n,max_id]
-        p_peak[n] = q[max_id]
-    v_peak = 1/p_peak
+        # If maximum is associated with slowness=0, set p_peak equal to arbitrary high number (for numerical stability)
+        p_peak[n] = np.max(np.array([q[max_id], 1e-10]))
+    v_peak = 1.0/p_peak
 
 
     # Transpose matrices so that frequency is on x-axis and remove column for slowness=0
     q = q[1::]    
-    v_vals = 1/q
+    v_vals = 1.0/q
     pnorm = pnorm[:,1::].transpose()
         
 
     # Create instance of DispersionPower class..................................
-    dispersionPower = dctypes.DispersionPower( freq, v_peak, v_vals, 'velocity', kres, pnorm )
+    dispersionPower = dctypes.DispersionPower( freq, v_peak, v_vals, 'velocity', shotGather.kres, pnorm )
     return dispersionPower        
             
     

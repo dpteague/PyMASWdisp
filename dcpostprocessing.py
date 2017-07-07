@@ -46,6 +46,12 @@ import dctypes
 import shotgathers
 
 
+# Width and height (in) of plots
+mwdth = 6.45
+mhght = 4
+fsize = 10
+
+
 # Function to bin dispersion data from one or more arrays or offsets and compute
 # statistics for each bin.
 def computeDCstats( rawDC, minP=5, maxP=100, numbins=96, binScale="linear", binType="frequency", arrayWeights=[] ):
@@ -115,9 +121,10 @@ def computeDCstats( rawDC, minP=5, maxP=100, numbins=96, binScale="linear", binT
             else:
                 binWeight[g] = len(velPoints) 
                 velMean[g] = np.average(velPoints)
-                velStd[g] = np.std(velPoints, ddof=1)
                 slowMean[g] = np.average(slowPoints)
-                slowStd[g] = np.std(slowPoints, ddof=1)
+                if binWeight[g] > 1:
+                    velStd[g] = np.std(velPoints, ddof=1)
+                    slowStd[g] = np.std(slowPoints, ddof=1)
                 freqMean[g] = np.average(freqPoints)
                 waveMean[g] = np.average(wavePoints)
         
@@ -158,10 +165,11 @@ def plotDCforRmv( rawDC, meanDisp, setLeg, markType=[], colorSpec=[], xScaleType
     
     # Set figure size equal to 2/3 screen size
     # Get screen size in mm and convert to in (25.4 mm per inch)
-    root = tk.Tk()
-    width = root.winfo_screenmmwidth() / 25.4 * 0.66
-    height = root.winfo_screenmmheight() / 25.4 * 0.66
-    cfig = plt.figure( figsize=(width,height) ) 
+    #root = tk.Tk()
+    #width = root.winfo_screenmmwidth() / 25.4 * 0.66
+    #height = root.winfo_screenmmheight() / 25.4 * 0.66
+    #cfig = plt.figure( figsize=(width,height) ) 
+    cfig = plt.figure( figsize=(mwdth,mhght) ) 
 
     # Curves for kmin and kmax (if kmin and kmax are provided)
     minF = np.min(meanDisp[:,0])
@@ -200,10 +208,10 @@ def plotDCforRmv( rawDC, meanDisp, setLeg, markType=[], colorSpec=[], xScaleType
         axf.plot( freq_klim, vel_klimF[:,1], linestyle="-" )
         axf.plot( freq_klim, vel_klimF[:,2], linestyle="--" )
         axf.plot( freq_klim, vel_klimF[:,3], linestyle="-." )
-    axf.set_xlabel( "Frequency (Hz)", fontsize=14, fontname="arial" )
-    axf.set_ylabel( "Velocity (m/s)", fontsize=14, fontname="arial" ) 
-    axf.set_xticklabels(axf.get_xticks(), fontsize=14, fontname="arial" )
-    axf.set_yticklabels(axf.get_yticks(), fontsize=14, fontname="arial" )
+    axf.set_xlabel( "Frequency (Hz)", fontsize=fsize, fontname="arial" )
+    axf.set_ylabel( "Velocity (m/s)", fontsize=fsize, fontname="arial" ) 
+    axf.set_xticklabels(axf.get_xticks(), fontsize=fsize, fontname="arial" )
+    axf.set_yticklabels(axf.get_yticks(), fontsize=fsize, fontname="arial" )
     axf.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter('%d'))
     axf.set_xscale( xScaleType )
 
@@ -222,10 +230,10 @@ def plotDCforRmv( rawDC, meanDisp, setLeg, markType=[], colorSpec=[], xScaleType
         axw.plot( wave_lim[:,3], vel_klimW, linestyle="-.", label='kmin/2' )
     handles, labels = axw.get_legend_handles_labels()
     axw.legend(handles, labels, loc='upper left')
-    axw.set_xlabel( "Wavelength (m)", fontsize=14, fontname="arial" )
+    axw.set_xlabel( "Wavelength (m)", fontsize=fsize, fontname="arial" )
     axw.set_xscale( xScaleType )
-    axw.set_xticklabels(axw.get_xticks(), fontsize=14, fontname="arial" )
-    axw.set_yticklabels(axw.get_yticks(), fontsize=14, fontname="arial" ) 
+    axw.set_xticklabels(axw.get_xticks(), fontsize=fsize, fontname="arial" )
+    axw.set_yticklabels(axw.get_yticks(), fontsize=fsize, fontname="arial" ) 
     axw.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter('%d'))
     cfig.show()
 

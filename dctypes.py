@@ -37,7 +37,12 @@ import scipy as sp
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import tkinter as tk
+import shotgathers
 
+
+# Width and height (in) of plots showing contours and/or "slices"
+mwdth = 6
+mhght = 4.25
 
 # Class containing full dispersion processing results (including power)
 # Results can be derived from FK, FDBF, slant-stack transform, or Park transform
@@ -158,24 +163,24 @@ class DispersionPower(object):
         # Ploting 
         # Set figure size equal to 2/3 screen size
         # Get screen size in mm and convert to in (25.4 mm per inch)
-        root = tk.Tk()
-        width = root.winfo_screenmmwidth() / 25.4 * 0.66
-        height = root.winfo_screenmmheight() / 25.4 * 0.66
-        fig = plt.figure( figsize=(width,height) )                
-        ax = fig.add_axes([0.1, 0.08, 0.85, 0.88])
+        #root = tk.Tk()
+        #width = root.winfo_screenmmwidth() / 25.4 * 0.66
+        #height = root.winfo_screenmmheight() / 25.4 * 0.66
+        #fig = plt.figure( figsize=(width,height) )
+        fig = plt.figure( figsize=(mwdth,mhght) )                
+        ax = fig.add_axes([0.14, 0.14, 0.80, 0.80])
         plt.contourf( xgrid, ygrid, np.abs(self.pnorm), np.linspace(0, maxZ, 20), cmap=plt.cm.get_cmap("jet") )
         ax.plot( xpeak, ypeak, marker="o", markersize=5, markeredgecolor="w", markerfacecolor='none', linestyle="none" )
         ax.axis( plotLim )    
-        ax.set_xlabel(xLabText, fontsize=14, fontname="arial")
-        ax.set_ylabel(yLabText, fontsize=14, fontname="arial")
+        ax.set_xlabel(xLabText, fontsize=12, fontname="arial")
+        ax.set_ylabel(yLabText, fontsize=12, fontname="arial")
         ax.set_xscale(xscale)
         ax.set_yscale(yscale)
-        ax.set_xticklabels(ax.get_xticks(), fontsize=14, fontname="arial" )
-        ax.set_yticklabels(ax.get_yticks(), fontsize=14, fontname="arial" ) 
+        ax.set_xticklabels(ax.get_xticks(), fontsize=12, fontname="arial" )
+        ax.set_yticklabels(ax.get_yticks(), fontsize=12, fontname="arial" ) 
         ax.xaxis.set_major_formatter(mpl.ticker.FormatStrFormatter('%d'))
         ax.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter('%d'))
         plt.colorbar(ticks=np.linspace(0, maxZ, 8))
-        fig.show()
 
 
     # Method to plot slices in various domains**********************************
@@ -200,10 +205,11 @@ class DispersionPower(object):
 
         # Set figure size equal to 2/3 screen size
         # Get screen size in mm and convert to in (25.4 mm per inch)
-        root = tk.Tk()
-        width = root.winfo_screenmmwidth() / 25.4 * 0.66
-        height = root.winfo_screenmmheight() / 25.4 * 0.66
-        fig = plt.figure( figsize=(width,height) )
+        #root = tk.Tk()
+        #width = root.winfo_screenmmwidth() / 25.4 * 0.66
+        #height = root.winfo_screenmmheight() / 25.4 * 0.66
+        #fig = plt.figure( figsize=(width,height) )
+        fig = plt.figure( figsize=(mwdth,mhght) )
 
         # Loop through freqPlotValues
         for k in range(n_slices-1, -1, -1):
@@ -278,12 +284,12 @@ class DispersionPower(object):
             ax.set_yticklabels(ax.get_yticks(), fontsize=9, fontname='arial' )
             ax.xaxis.set_major_formatter( mpl.ticker.FormatStrFormatter('%d') )
             ax.yaxis.set_major_formatter( mpl.ticker.FormatStrFormatter('%d') )
-            plt.text( text_xloc, 0.75*maxY, str(cfreq), fontsize=9, fontname="arial" )
+            prfreq = '%.2f' % cfreq
+            plt.text( text_xloc, 0.75*maxY, prfreq+" Hz", fontsize=9, fontname="arial" )
             if panel_ids[k,0] == yFigDim:
                 ax.set_xlabel(xLabText, fontsize=9, fontname="arial") 
             if panel_ids[k,1] == 1:
-                ax.set_ylabel("Normalized Power", fontsize=9, fontname="arial") 
-        fig.show()    
+                ax.set_ylabel("Normalized Amplitude", fontsize=9, fontname="arial")
    
 
             
@@ -296,11 +302,10 @@ class RawDispersion(object):
         self.velocity = velocity      # List containing velocity arrays (1 per offset)
         self.offset = offset          # List containing offsets 
 
-    # Method to remove data with excessively high Vs values*********************
+    # Method to remove data with excessively high/low Vs values*****************
     def rmvHighVs(self, Vs_cut=3500):  
         for k in range(np.shape(self.frequency)[0]):
-            high_id = np.where( self.velocity[k] > Vs_cut ) 
-            self.velocity[k] = np.delete(self.velocity[k], high_id, 0)
-            self.frequency[k] = np.delete(self.frequency[k], high_id, 0)
-            
+            keep_id = np.logical_and( self.velocity[k] <= Vs_cut, self.velocity[k]>0 ) 
+            self.velocity[k] = self.velocity[k][keep_id]
+            self.frequency[k] = self.frequency[k][keep_id]
            

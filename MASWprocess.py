@@ -1,17 +1,13 @@
 """
     This script calculates experimental dispersion data for one or more 
-    source-offsets. Input file(s) for each source offset should be in seg2
-    (.dat) format. 
+    source-offsets. Input file(s) for each source offset are assumed to be in 
+    seg2 (.dat) format. 
 
     Note that the data acquisition paramters (e.g., receiver spacing, source-
     offset, etc) are automatically read from the seg2 file. Thus, if the data
     acquisition parameters were not properly entered into the data acquisition
-    system, then these values of the cShotGather class should be manually 
-    changed. For example, if the offset was not properly entered into the data 
-    acquisition, then you can create a variable called 'offsets' and manually 
-    change the offset during each loop by entering the command 
-    'cShotGather.offset = offsets[k]' after the cShotGather class is created.
-    (See 'shotgathers.py' for more information). 
+    system, then these values should be manually overwritten by setting the 
+    optional processing inputs (see below).  
 
 
     This code was developed at the University of Texas at Austin.
@@ -39,10 +35,10 @@
 
 # Input file numbers (e.g., [ [1,10], [11, 20], [21,30] ] , where shots
 # 1-10 correspond to one offset, 11-20 correspond to another offset, etc.)
-infile_numbers = [[11,20],[11,20],[11,20],[11,20],[11,20],[11,20]]
+infile_numbers = [[1,10],[10,20],[20,30],[31,40]]
 
 # Directory containing input seg2 (.dat) files. (Enter pwd for current directory)
-infile_path = 'C:/DPT_Projects/New Zealand/Preliminary Analysis/Fitzgerald/Active/Raw Data'
+infile_path = 'C:/DPT_Projects/New Zealand/Preliminary Analysis/Illiam Fields/Active/Raw Data'
 
 # Files to exclude from calculations (enter [] to include all files)
 exclude_files=[]
@@ -54,14 +50,14 @@ outfile_name = 'FTG_DC_raw'
 outfile_path = infile_path
 
 # Length of recorded trace to use in calculations [s]
-timelength = 0.5
+timelength = 1.5
 
 # Desired spacing of dispersion data points [Hz]
 deltaf = 0.5
 
 # Min and max frequency to consider in calculations
 min_freq = 5
-max_freq = 100
+max_freq = 60
 
 # Min velocity (FDBF, phase-shift, and tau-p) and max velocity (FDBF and phase-shift) to consider in calculations 
 min_vel = 80
@@ -75,39 +71,64 @@ n_trial = 2048
 #   'fdbf':         Frequency domain beamformer
 #   'phase-shift':  Phase-shift transformation
 #   'slant-stack':  Slant-stack (linear Radon) transformation
-processMethod = [ "fk", "fdbf", "fdbf", "fdbf", "phase-shift", "slant-stack"]
+processMethod = [ 'fk' ]
 
 # Weighting technique for FDBF (similar to processing method, can specify multiple)
 #   'none' for equal weighting
 #   'sqrt' to weight each receiver trace by the square root of the distance from the source
 #   'invamp' to weight each receiver by 1/|A(f,x)|
-weightType = [ '', 'none', 'sqrt', 'invamp', '', '' ]
+weightType = [ 'none' ]
+
+# Steering vector type to use in FDBF calculations (similar to processing method, can specify multiple)
+#   'plane' for plane wave steering vector
+#   'cylindrical' for cylindrical wave steering vector
+steeringVector = ['plane']
 
 # Signal-to-noise ratio inputs
 noise_location = 'end'
 
 
+# OPTIONAL processing inputs....................................................
+# (ONLY USE IF SEG2 HEADER FIELDS ARE INCORRECT)
 
-# Plotting inputs (1 to plot, otherwise 0)......................................
-flag_SNR = 1
-# Contour plots (1 to plot, otherwise 0)
-flag_con_fk = 0                    # Frequency-wavenumber
-flag_con_fw = 0                    # Frequency-wavelength
-flag_con_fv = 1                    # Frequency-phase velocity
-flag_con_fp = 0                    # Frequency-slowness
-flag_con_wv = 0                    # Wavelength-phase velocity
-# Slices in various domains (1 to plot, otherwise 0)
-f_plot_vals = range(8,40,2)        # Frequencies to plot slices in chosen domain
-flag_slices_fk = 0                 # Wavenumber-power at select frequencies
-flag_slices_fw = 0                 # Wavelength-power at select frequencies
-flag_slices_fv = 0                 # Velocity-power at select frequencies
-flag_slices_fp = 0                 # Slowness-power at select frequencies
+# Set flag_overwrite=True to overwrite automatically read parameters
+# Otherwise dt, n_channels, position, offset, and delay variables will be ignored
+flag_overwrite = False
+# Sample rate [s]
+dt = [0.004, 0.004, 0.004, 0.004]
+# Number of receivers
+n_channels = [48, 48, 48, 48]
+# Vector containing positions of receivers
+position = [range(0,96,2), range(0,96,2), range(0,96,2), range(0,96,2)]
+# Source offset from first or last receiver
+offset = [5,10,20,40]
+# Pre-trigger delay
+delay = [0,0,0,0]
+
+
+# Plotting inputs ..............................................................
+# Set flag_SNR or flag_waterfall equal to True to plot signal-to-noise ratio or waterfall plots, respectively 
+flag_SNR = True
+flag_waterfall = True
+# Contour plots (Set equal to True to plot, otherwise False)
+flag_con_fk = False                # Frequency-wavenumber
+flag_con_fw = False                # Frequency-wavelength
+flag_con_fv = True                 # Frequency-phase velocity
+flag_con_fp = False                # Frequency-slowness
+flag_con_wv = False                # Wavelength-phase velocity
+# Slices in various domains (Set equal to True to plot, otherwise False)
+f_plot = range(10,50,10)          # Frequencies to plot slices in chosen domain
+flag_slices_fk = False            # Wavenumber-power at select frequencies
+flag_slices_fw = False            # Wavelength-power at select frequencies
+flag_slices_fv = True            # Velocity-power at select frequencies
+flag_slices_fp = False            # Slowness-power at select frequencies
 
 # END OF INPUTS*****************************************************************
 #*******************************************************************************
 
 
 # Load modules
+import os
 import time
 import numpy as np
 import pickle
@@ -115,6 +136,9 @@ import gzip
 import shotgathers
 import dcprocessing
 import dctypes
+import matplotlib.pyplot as plt
+plt.ion()
+
 
 
 # Initialize lists for storing processed dispersion data
@@ -128,16 +152,30 @@ tic = time.clock()
 
 # Compare signal-to-noise ratios for various offsets
 if flag_SNR:
-    shotgathers.compareSNR( infile_numbers, infile_path, noise_location, timelength, exclude_files, deltaf )
+    shotgathers.compareSNR( infile_numbers, infile_path, noise_location, timelength, exclude_files, deltaf, (0,max_freq) )
 
 # Loop through all offsets
 for k in range( len(infile_numbers) ):
 
     # Processing***************************************************************
     # Stack records for current offset location
-    cShotGather = shotgathers.importAndStackWaveforms( infile_numbers[k][0], infile_numbers[k][1], infile_path, exclude_files )
+    if len(infile_numbers[k])==1:
+        cShotGather = shotgathers.importAndStackWaveforms( infile_numbers[k][0], infile_numbers[k][0], infile_path, exclude_files, 'no' )
+    else:
+        cShotGather = shotgathers.importAndStackWaveforms( infile_numbers[k][0], infile_numbers[k][1], infile_path, exclude_files, 'no' )
+    # Manually overwrite automatically-read parameters (optional)
+    if flag_overwrite:
+        cShotGather.dt = dt[k]
+        cShotGather.n_channels = n_channels[k]
+        cShotGather.position = position[k]
+        cShotGather.offset = offset[k]
+        cShotGather.delay = delay[k]
+    cShotGather.print_attributes()
     # Cut time records at timelength
     cShotGather.cut(timelength)
+    # Generate waterfall plot
+    if flag_waterfall:
+        cShotGather.plot()
     # Padd zeros to acheive desired df
     cShotGather.zero_pad(deltaf)
     
@@ -154,7 +192,11 @@ for k in range( len(infile_numbers) ):
             cWtType = weightType[0]
         else:
             cWtType = weightType[k]
-        cDCpower = dcprocessing.fdbf( cShotGather, cWtType, n_trial, min_vel, max_vel, min_freq, max_freq )
+        if len(steeringVector)==1:
+            cSvec = steeringVector[0]
+        else:
+            cSvec = steeringVector[k]
+        cDCpower = dcprocessing.fdbf( cShotGather, cWtType, cSvec, n_trial, min_vel, max_vel, min_freq, max_freq )
     elif str.lower(cpMethod)=='fk':
         cDCpower = dcprocessing.fk( cShotGather, n_trial, min_freq, max_freq )
     elif str.lower(cpMethod)=='phase-shift':
@@ -190,14 +232,13 @@ for k in range( len(infile_numbers) ):
         cDCpower.plotSpect("wv", [0.5*cShotGather.position[1], 2*cShotGather.position[-1], 0, max_vel ])
     # Slices in various domains
     if flag_slices_fk:
-        cDCpower.plotSlices("fk", f_plot_vals, (0, cDCpower.kres) )
+        cDCpower.plotSlices("fk", f_plot, (0, cDCpower.kres) )
     if flag_slices_fw:
-        cDCpower.plotSlices("fw", f_plot_vals, ( 0.5*cShotGather.position[1], 2*cShotGather.position[-1] ) )
+        cDCpower.plotSlices("fw", f_plot, ( 0.5*cShotGather.position[1], 2*cShotGather.position[-1] ) )
     if flag_slices_fv:
-        cDCpower.plotSlices("fv", f_plot_vals, (0, max_vel) )
+        cDCpower.plotSlices("fv", f_plot, (0, max_vel) )
     if flag_slices_fp:
-        cDCpower.plotSlices("fp", f_plot_vals, (1.0/max_vel, 1.0/min_vel) )
-
+        cDCpower.plotSlices("fp", f_plot, (1.0/max_vel, 1.0/min_vel) )
 
 # Create class containing all raw dispersion data
 cRawDC = dctypes.RawDispersion( frequencyRaw, velocityRaw, offsetRaw )
@@ -212,5 +253,6 @@ f.close()
 # Print execution time
 toc = time.clock()
 print "Elapsed time: "+str(toc - tic)+" seconds"
+plt.show(block=True)
 
 

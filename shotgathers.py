@@ -4,14 +4,11 @@
         Stores all of the relevent information for a given source-offset (i.e.,
         data acquisition parameters and time histories). The class has a number
         methods, which can print the attributes of the class, cut the time 
-        histories, and plot the time histories.
+        histories, plot the time histories, and calculate SNR.
 
     Functions:
         importAndStackWaveforms: 
         Import and stack data (from seg2 files) for a given source-offset  
-        
-        calcSNR:
-        Calculate signal-to-noise ratios for a given source-offset
 
         compareSNR:
         Plot/compare signal-to-noise ratios   
@@ -41,7 +38,6 @@
 # Import modules
 import numpy as np
 from scipy import signal
-import tkinter as tk
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
@@ -55,14 +51,17 @@ class ShotGather(object):
     
     # Class attributes
     def __init__(self, dt, n_channels, n_samples, position, offset, delay, timeHistories):
-        self.dt = dt
-        self.n_channels = n_channels
-        self.n_samples = n_samples
-        self.position = position
-        self.offset = offset
-        self.delay = delay
-        self.timeHistories = timeHistories
-        self.multiple = 1 # Used when zeros are padded such that down-sampling every "multiple" samples is necessary
+        self.dt = dt                        # sample rate [s]
+        self.n_channels = n_channels        # number of receivers used in testing
+        self.n_samples = n_samples          # number of samples per receiver
+        self.position = position            # vector of positions for all receivers
+        self.offset = offset                # offset location
+        self.delay = delay                  # pre-trigger delay [s]
+        self.timeHistories = timeHistories  # matrix containing time histories for all receivers
+        self.multiple = 1                   # Used when zeros are padded such that down-sampling every "multiple" samples is necessary
+        self.fnyq = 1.0/(2*self.dt)         # Nyquist frequency
+        self.df = 1.0 / (self.n_samples * self.dt)          # Sampling in frequency domain
+        self.kres = 2 * np.pi / min(np.diff(self.position)) # Maximum resolvable wavenumber
 
     # Method to print attributes of time histories
     def print_attributes(self):
@@ -76,7 +75,7 @@ class ShotGather(object):
         print "delay:       "+str(self.delay)
         print "timeHistories"+str(np.shape(self.timeHistories))
 
-    # Method to cut waveforms
+    # Method to cut waveforms at specified time
     def cut(self, max_time, newDelay=0):
         time = np.arange(self.delay, (self.n_samples*self.dt + self.delay), self.dt)
         # Keep entire pretrigger delay
@@ -90,10 +89,11 @@ class ShotGather(object):
         time = time[startID:endID]
         self.n_samples = len(time)
         self.timeHistories = self.timeHistories[startID:endID][:]
+        self.df = 1.0 / (self.n_samples * self.dt)
         return
 
     # Method to plot waveforms
-    def plot(self, scale_factor=1, plot_ax='x'):
+    def plot(self, scale_factor=1.0, plot_ax='x'):
         time = np.arange(self.delay, (self.n_samples*self.dt + self.delay), self.dt)
         # Normalize and detrend
         norm_traces = np.zeros( np.shape(self.timeHistories) )
@@ -104,30 +104,40 @@ class ShotGather(object):
             current_trace = current_trace*scale_factor + self.position[k]   # Scale and shift
             norm_traces[:,k]= current_trace
 
-        # Set figure size equal to 2/3 screen size
-        # Get screen size in mm and convert to in (25.4 mm per inch)
-        root = tk.Tk()
-        width = root.winfo_screenmmwidth() / 25.4 * 0.66
-        height = root.winfo_screenmmheight() / 25.4 * 0.66
-        fig = plt.figure( figsize=(width,height) )
-
         # Plotting
-        ax = fig.add_subplot(111)
-        ax.hold(True)
-        for m in range(self.n_channels):
-            ax.plot(time, norm_traces[:,m],'b-')
-        ax.set_xlim( ( min(time), max(time) ) )
-        ax.set_ylim( (-self.position[1], self.position[1]+self.position[len(self.position)-1] ) )
-        ax.grid(axis='x', linestyle='--')
-        ax.set_xlabel('Time (s)', fontsize=14, fontname="arial")
-        ax.set_ylabel('Normalized Amplitude', fontsize=14, fontname="arial")
-        ax.tick_params(labelsize=14)
-        ax.tick_params('x', length=10, width=1, which='major')
-        ax.tick_params('y', length=10, width=1, which='major')
-        plt.show()
+        if str.lower(plot_ax) == 'y':
+            fig = plt.figure( figsize=(2.75,6) )
+            ax = fig.add_axes([0.14,0.20,0.8,0.8])
+            for m in range(self.n_channels):
+                ax.plot(time, norm_traces[:,m],'b-', linewidth=0.5)
+            ax.set_xlim( ( min(time), max(time) ) )
+            ax.set_ylim( (-self.position[1], self.position[1]+self.position[len(self.position)-1] ) )
+            ax.set_xticklabels(ax.get_xticks(), fontsize=11, fontname='arial' )
+            ax.set_yticklabels(ax.get_yticks(), fontsize=11, fontname='arial' )
+            ax.grid(axis='x', linestyle='--')
+            ax.set_xlabel('Time (s)', fontsize=11, fontname="arial")
+            ax.set_ylabel('Normalized Amplitude', fontsize=11, fontname="arial")
+            ax.tick_params(labelsize=11)
+            ax.tick_params('x', length=4, width=1, which='major')
+            ax.tick_params('y', length=4, width=1, which='major')
+        elif str.lower(plot_ax) == 'x':
+            fig = plt.figure( figsize=(6,2.75) )
+            ax = fig.add_axes([0.14,0.20,0.8,0.75])
+            for m in range(self.n_channels):
+                ax.plot(norm_traces[:,m], time, 'b-', linewidth=0.5)
+            ax.set_ylim( ( max(time), min(time) ) )
+            ax.set_xlim( (-self.position[1], self.position[1]+self.position[len(self.position)-1] ) ) 
+            ax.set_yticklabels(ax.get_yticks(), fontsize=11, fontname='arial' )
+            ax.set_xticklabels(ax.get_xticks(), fontsize=11, fontname='arial' ) 
+            ax.grid(axis='y', linestyle='--') 
+            ax.set_ylabel('Time (s)', fontsize=11, fontname="arial")
+            ax.set_xlabel('Normalized Amplitude', fontsize=11, fontname="arial")
+            ax.tick_params(labelsize=11)
+            ax.tick_params('y', length=4, width=1, which='major')
+            ax.tick_params('x', length=4, width=1, which='major')
         return 
 
-    # Method to padd zeros to acheive desired frequency sampling
+    # Method to pad zeros to achieve desired frequency sampling
     def zero_pad(self, df = 0.2):
         # Required length of time history for desired df
         n_req = int(np.round( 1/(df*self.dt) )) 
@@ -149,8 +159,61 @@ class ShotGather(object):
             self.timeHistories = np.concatenate( ( self.timeHistories, np.zeros((trial_n[nextID] - self.n_samples,self.n_channels)) ), axis=0 )
             self.n_samples = trial_n[nextID]
         return        
-   
+
+    # Method for calculating signal-to-noise ratio (SNR)
+    def calcSNR( self, timelength=1, noise_location='end', df=0.2 ):
+
+        # Time vector
+        time = np.arange(self.delay, (self.n_samples*self.dt + self.delay), self.dt)
+        Ns = int( timelength/self.dt )
+
+        # Signal time ( 0 <= time <= timelength )
+        startpointS = int( np.argmin( abs(time) ) )
+        endpointS = startpointS + Ns
+        # Noise time (delay <= time <= delay+timelength) or (t_end - timelength <= time <= t_end, where t_end is the end time of the record)
+        if str.lower(noise_location)=='end':
+            endpointN = len(time)-1
+            startpointN = endpointN - Ns
+        elif str.lower(noise_location)=='pretrigger':
+            startpointN = int( np.argmin( time-self.delay ) )
+            endpointN = startpointN + Ns
+        else:
+            raise ValueError("Invalid noise_location. Should be \"end\" or \"pretrigger\".")
+
+        # Verify that signal and noise records do not overlap. If they do, return an error
+        if (endpointS > startpointN) and (str.lower(noise_location)=='end'):
+            raise Exception( 'Error: Signal and noise records are overlapping' )
+        elif (endpointN > startpointS) and (str.lower(noise_location)=='pretrigger'):
+            raise Exception( 'Error: Signal and noise records are overlapping' )
+
+        # Create instances of ShotGather class for signal and noise
+        shotGatherS = ShotGather(self.dt, self.n_channels, (endpointS-startpointS+1), self.position, self.offset, time[startpointS], self.timeHistories[startpointS:endpointS+1,:])
+        shotGatherN = ShotGather(self.dt, self.n_channels, (endpointN-startpointN+1), self.position, self.offset, time[startpointN], self.timeHistories[startpointN:endpointN+1,:])
+        # Pad zeros to acheive desired frequency sampling
+        shotGatherS.zero_pad(df)
+        shotGatherN.zero_pad(df)
+
+        # Sampling paramters
+        fnyq = 1.0/(2*shotGatherS.dt)
+        df = 1.0/(shotGatherS.n_samples*shotGatherS.dt)
+        freq = np.arange(df, fnyq, df)
+
+        # Perform FFT on signal and noise records
+        fftS = np.fft.fft( shotGatherS.timeHistories, axis=0 )
+        fftN = np.fft.fft( shotGatherN.timeHistories, axis=0 )
+
+        # Average signal and noise amplitudes (remove f=0 and negative frequencies)
+        ampS = (2.0/shotGatherS.n_samples) * np.abs( fftS[1:len(freq)+1] )
+        meanAmpS = np.mean( ampS, axis=1 )
+        ampN = (2.0/shotGatherN.n_samples) * np.abs( fftN[1:len(freq)+1] )
+        meanAmpN = np.mean( ampN, axis=1 )
+
+        # Compute SNR = 20*log10( signal_amplitude / noise_amplitude )
+        SNR = 20 * np.log10( meanAmpS / meanAmpN )
+
+        return (SNR, freq)
      
+
 
 # Function for importing and stacking waveforms
 # Stacked waveforms are saved as a ShotGather class
@@ -206,115 +269,29 @@ def importAndStackWaveforms( start_file, end_file, file_path=os.getcwd(), exclud
 
 
 
-# Function for calculating and plotting signal-to-noise ratio (SNR)
-def calcSNR( shotGather, timelength=1, noise_location='end', df=0.2, plotSNR=False, xscale='linear' ):
-
-    # Time vector
-    time = np.arange(shotGather.delay, (shotGather.n_samples*shotGather.dt + shotGather.delay), shotGather.dt)
-    
-    # Signal time ( 0 <= time <= timelength )
-    startpointS = int( np.argmin( abs(time - 0.0) ) )
-    endpointS = int( startpointS + timelength/shotGather.dt )
-    # Noise time (delay <= time <= delay+timelength) or (t_end - timelength <= time <= t_end, where t_end is the end time of the record)
-    if str.lower(noise_location)=='end':
-        endpointN = len(time)-1
-        startpointN = int( endpointN - timelength/shotGather.dt )
-    elif str.lower(noise_location)=='pretrigger':
-        startpointN = int( np.argmin( time-shotGather.delay ) )
-        endpointN = int( startpointN + timelength/shotGather.dt )
-    else:
-        raise ValueError("Invalid noise_location. Should be \"end\" or \"pretrigger\".") 
-
-    # Verify that signal and noise records do not overlap. If they do, return an error
-    if (endpointS > startpointN) and (str.lower(noise_location)=='end'):
-        raise Exception( 'Error: Signal and noise records are overlapping' ) 
-    elif (endpointN > startpointS) and (str.lower(noise_location)=='pretrigger'):
-        raise Exception( 'Error: Signal and noise records are overlapping' )
-    # Verify that signal and noise records are each equal to timeLength
-    if ( (time[endpointS]-time[startpointS]) < timelength ):
-        raise Exception( 'Error: Signal record length is less than timelength' )
-    elif ( (time[endpointN]-time[startpointN]) < timelength ):
-        raise Exception( 'Error: Noise record length is less than timelength' )
-
-    # Create instances of ShotGather class for signal and noise
-    shotGatherS = ShotGather(shotGather.dt, shotGather.n_channels, (endpointS-startpointS+1), shotGather.position, shotGather.offset, time[startpointS], shotGather.timeHistories[startpointS:endpointS+1,:])
-    shotGatherN = ShotGather(shotGather.dt, shotGather.n_channels, (endpointN-startpointN+1), shotGather.position, shotGather.offset, time[startpointN], shotGather.timeHistories[startpointN:endpointN+1,:])
-    # Pad zeros to acheive desired frequency sampling
-    shotGatherS.zero_pad(df)
-    shotGatherN.zero_pad(df)
-    
-    # Sampling paramters
-    fnyq = 1/(2*shotGatherS.dt)
-    df = 1/(shotGatherS.n_samples*shotGatherS.dt)
-    freq = np.arange(df, fnyq, df)
-
-    # Perform FFT on signal and noise records
-    fftS = np.fft.fft( shotGatherS.timeHistories, axis=0 )
-    fftN = np.fft.fft( shotGatherN.timeHistories, axis=0 )
-
-    # Average signal and noise amplitudes (remove f=0 and negative frequencies)
-    ampS = (2.0/shotGatherS.n_samples) * np.abs( fftS[1:len(freq)+1] )
-    meanAmpS = np.mean( ampS, axis=1 )
-    ampN = (2.0/shotGatherN.n_samples) * np.abs( fftN[1:len(freq)+1] )
-    meanAmpN = np.mean( ampN, axis=1 )
-
-    # Compute SNR = 20*log10( signal_amplitude / noise_amplitude )
-    SNR = 20 * np.log10( meanAmpS / meanAmpN )
-
-    # Plotting
-    if plotSNR:
-        # Set figure size equal to 2/3 screen size
-        # Get screen size in mm and convert to in (25.4 mm per inch)
-        root = tk.Tk()
-        width = root.winfo_screenmmwidth() / 25.4 * 0.66
-        height = root.winfo_screenmmheight() / 25.4 * 0.66
-        fig = plt.figure( figsize=(width,height) )  
-        ax = fig.add_axes([0.1, 0.08, 0.85, 0.88])
-        ax.hold(True) 
-        ax.plot( freq, SNR, '-', linewidth=2 )  
-        ax.set_xlabel('Frequency (Hz)', fontsize=14, fontname='arial')
-        ax.set_ylabel('Signal-to-Noise Ratio (dB)', fontsize=14, fontname='arial')
-        ax.set_xscale(xscale)
-        ax.set_yscale('linear')
-        ax.set_xticklabels(ax.get_xticks(), fontsize=14, fontname='arial' )
-        ax.set_yticklabels(ax.get_yticks(), fontsize=14, fontname='arial' )
-        fig.show()
-
-    return (SNR, freq)
-
-
-
-
 # Function to plot/compare signal-to-noise ratios
-def compareSNR( infile_numbers, infile_path=os.getcwd(), noise_location='end', timelength=1, exclude_files=[], deltaf=0.2 ):
+def compareSNR( infile_numbers, infile_path=os.getcwd(), noise_location='end', timelength=1.0, exclude_files=[], deltaf=0.2, xlmts=(0,50) ):
     
     # Colors of stacked SNR curves
     plotColorsStack = create_ColorMap( len(infile_numbers) )
 
-    # Set figure size equal to 2/3 screen size
-    # Get screen size in mm and convert to in (25.4 mm per inch)
-    root = tk.Tk()
-    width = root.winfo_screenmmwidth() / 25.4 * 0.66
-    height = root.winfo_screenmmheight() / 25.4 * 0.66
-    fig = plt.figure( figsize=(width,height) )
-
-    # Additional plotting parameters    
-    ax = fig.add_axes([0.1, 0.08, 0.85, 0.88]) 
+    # Create figure
+    fig = plt.figure( figsize=(6,4.25) )
+    ax = fig.add_axes([0.14,0.14,0.8,0.8])
     ax.set_xscale('linear')
     ax.set_yscale('linear')
-    ax.set_xlim( (0, 50) )
-    ax.set_xticklabels(ax.get_xticks(), fontsize=14, fontname='arial' )
-    ax.set_yticklabels(ax.get_yticks(), fontsize=14, fontname='arial' )
+    ax.set_xlim( xlmts )
+    ax.set_xticklabels(ax.get_xticks(), fontsize=11, fontname='arial' )
+    ax.set_yticklabels(ax.get_yticks(), fontsize=11, fontname='arial' )
     ax.xaxis.set_major_locator( MultipleLocator(10) )
     ax.xaxis.set_major_formatter( FormatStrFormatter('%d') )
     ax.yaxis.set_major_formatter( FormatStrFormatter('%d') )
     ax.xaxis.set_minor_locator( MultipleLocator(2) )
     ax.yaxis.set_minor_locator( MultipleLocator(2) )
-    ax.tick_params('both', length=10, width=1, which='major')
-    ax.tick_params('both', length=5, width=1, which='minor') 
-    ax.hold(True)
-    ax.set_xlabel('Frequency (Hz)', fontsize=14, fontname='arial')
-    ax.set_ylabel('Signal-to-Noise Ratio (dB)', fontsize=14, fontname='arial')
+    ax.tick_params('both', length=6, width=1, which='major')
+    ax.tick_params('both', length=2, width=1, which='minor') 
+    ax.set_xlabel('Frequency (Hz)', fontsize=11, fontname='arial')
+    ax.set_ylabel('Signal-to-Noise Ratio (dB)', fontsize=11, fontname='arial')
     yMax = 0
     
     
@@ -324,16 +301,17 @@ def compareSNR( infile_numbers, infile_path=os.getcwd(), noise_location='end', t
         # If only one offset is chosen, show SNR for individual shots...........
 
         # Determine total number of files minus excluded files
-        if len(infile_numbers)==1:
+        if len(infile_numbers)==1 and len(infile_numbers[0])>1:
             # Determine total number of files minus excluded files
             Nf = 0
             Nt = 0
             freqRange = []
-            for k in range( infile_numbers[m][0], infile_numbers[m][1]+1 ):
-                Nt += 1
-                if not (k in exclude_files):
-                    Nf += 1
-                    freqRange.append(k)
+            if len(infile_numbers[m])>1:
+                for k in range( infile_numbers[m][0], infile_numbers[m][1]+1 ):
+                    Nt += 1
+                    if not (k in exclude_files):
+                        Nf += 1
+                        freqRange.append(k)
 
             # Colors associated with individual files
             plotColorsIndv = create_ColorMap(Nf)
@@ -341,14 +319,17 @@ def compareSNR( infile_numbers, infile_path=os.getcwd(), noise_location='end', t
             # Calculate individual SNR, plot results
             for k in range(Nf):
                 shotGather = importAndStackWaveforms( freqRange[k], freqRange[k], infile_path, [], 'no' )
-                SNR, freq = calcSNR( shotGather, timelength, noise_location, deltaf )
-                ax.plot( freq, SNR, '-', color=plotColorsIndv[k,:], linewidth=1, label=str(k)+'.dat' )
+                SNR, freq = shotGather.calcSNR( timelength, noise_location, deltaf )
+                ax.plot( freq, SNR, '-', color=plotColorsIndv[k,:], linewidth=1, label=str(k+1)+'.dat' )
     
 
         # Plot SNR for stacked shot(s)
-        shotGather = importAndStackWaveforms( infile_numbers[m][0], infile_numbers[m][1], infile_path, exclude_files, 'no' )
-        SNR, freq = calcSNR( shotGather, timelength, noise_location, deltaf )
-        if len(infile_numbers)==1:
+        if len(infile_numbers[m])==1:
+            shotGather = importAndStackWaveforms( infile_numbers[m][0], infile_numbers[m][0], infile_path, exclude_files, 'no' )
+        else:
+            shotGather = importAndStackWaveforms( infile_numbers[m][0], infile_numbers[m][1], infile_path, exclude_files, 'no' )
+        SNR, freq = shotGather.calcSNR( timelength, noise_location, deltaf )
+        if len(infile_numbers)==1 and len(infile_numbers[0])>1:
             ax.plot( freq, SNR, '-', color='black', linewidth=2.5, label='Stacked: '+str(shotGather.offset)+' m Offset' )
         else:
             clabel = str(shotGather.offset)+' m Offset'
@@ -358,9 +339,8 @@ def compareSNR( infile_numbers, infile_path=os.getcwd(), noise_location='end', t
         while yMax < np.max(SNR):
             yMax += 10
     
-    ax.legend(loc='upper left')
+    ax.legend(loc='lower right', fontsize=8)
     ax.set_ylim( (0, yMax) )
-    fig.show()
 
 
 

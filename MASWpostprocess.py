@@ -39,7 +39,7 @@ binScale = 'log'
 # Min and max freq/wavelength and number of bins
 minF = 5
 maxF = 100
-nBins = 80
+nBins = 30
 # Array weights (Can assign different relative weights to each array, e.g. [1,2,2]
 # assigns two times more weight to the second and third source-offsets. Set equal
 # to [] for equal weighting).
@@ -48,10 +48,10 @@ arrayWt = []
 
 # Plotting parameters........................................................... 
 # Marker type and color for each source-offset
-markType = [ 'o', 'v', 'v', 'v', 'x', '*' ]
-colorSpec = [ 'r', 'b', 'c', 'g', 'm', 'y' ]
+markType = [ 'o', 'v', 's', '*' ]
+colorSpec = [ 'r', 'b', 'c', 'g' ]
 # Manual legend entries for each source-offset (set to [] to list source-offset)
-manualLeg = [ '10m: fk', '10m: fdbf', '10m: fdbf (sqrt)', '10m: fdbf (invamp)', '10m: phase-shift', '10m: slant-stack']
+manualLeg = [ '5m-fk', '10m-fk', '20m-fk', '40m-fk' ]
 # Can view'linear' or 'log' x-axis
 xScaleType = 'log'
 
@@ -111,7 +111,7 @@ while cont:
             prs = False
 
     # Ask user if they would like to continue cutting data
-    cont = input('Enter 1 to continue cutting data, otherwise enter 0: ')
+    cont = input('Enter 1 to continue cutting data, otherwise enter 0 to export data to text file: ')
                 
 
 # Create files with final processed data ***************************************
